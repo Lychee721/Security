@@ -1,69 +1,47 @@
-# Week 4 VM Lab
+# Assignment
 
-This folder contains the code used for the coursework demo.
+Code for the coursework demo.
 
-- `cw1`: attack replay, HTTP burst, mock thermostat, and Snort rules
-- `cw2`: defended thermostat with API-key protection, rate limiting, lockout, and Snort monitoring
+- `cw1`: attack replay, HTTP burst, mock thermostat, Snort detection
+- `cw2`: defended thermostat with API key, rate limiting, lockout, and Snort monitoring
 
-The lab is meant to run inside an Ubuntu VM on a private or host-only network.
+Run everything inside an Ubuntu VM on a private or host-only network.
 
 ## Data
 
-The attack inputs are the Week 4 PCAP files:
+Place these files in `~/week4-lab/pcaps/` inside the VM:
 
 - `SYN.pcap`
 - `udp_flood.pcap`
 - `dns.pcap`
 - `ip_fragmented.pcap`
 
-Copy them into `~/week4-lab/pcaps/` inside the VM before replaying traffic.
-
 ## Setup
 
-Inside the Ubuntu VM:
-
 1. Run `ubuntu/setup_lab.sh`
-2. Check the interface name with `ip addr`
-3. Apply the rules with `ubuntu/snort/apply_local_rules.sh <interface>`
+2. Find the interface with `ip addr`
+3. Run `ubuntu/snort/apply_local_rules.sh <interface>`
 
-## CW1 quick run
+## Run
 
-For the attack demo:
+`cw1`
 
 - `bash run-demo.sh`
 - `bash show-demo-results.sh`
 
-You can also run the pieces manually from `ubuntu/demo/`, for example:
-
-- `start_mock_thermostat.sh`
-- `http_burst_demo.sh`
-- `icmp_burst_demo.sh`
-- `replay_syn.sh`
-- `replay_udp.sh`
-
-## CW2 quick run
-
-For the defence demo:
+`cw2`
 
 - `bash run-defense-demo.sh`
 - `bash show-defense-results.sh`
 
-The defended service is implemented in `ubuntu/demo/defended_thermostat.py`.
-The Snort rules are in `ubuntu/snort/local.rules`.
+## Files
 
-## Output
-
-Collected outputs are written to `evidence/`.
-
-This includes:
-
-- service responses
-- Snort console logs
-- thermostat logs
-- metrics and summary files
+- `ubuntu/demo/`: attack and defence scripts
+- `ubuntu/snort/`: local Snort rules
+- `evidence/`: sample outputs from the demo
 
 ## Notes
 
 - Use only private or host-only IP ranges.
-- Do not run the traffic generators against public targets.
-- The `report/` folder is only draft writing support and is not needed to run the demo.
+- Do not target public IPs.
+- `report/` is not needed to run the code.
