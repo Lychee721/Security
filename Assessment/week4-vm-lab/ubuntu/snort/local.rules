@@ -1,0 +1,10 @@
+# ELEC0138 custom rules for the Week 4 VM route.
+# These rules are intentionally simple and tuned for an isolated coursework demo.
+# Keep each rule on one line for Snort 2 compatibility.
+
+alert icmp any any -> $HOME_NET any (msg:"ELEC0138 ICMP burst to private host"; itype:8; detection_filter:track by_dst, count 20, seconds 1; sid:1001001; rev:2;)
+alert tcp any any -> $HOME_NET any (msg:"ELEC0138 possible SYN flood"; flags:S; detection_filter:track by_dst, count 30, seconds 1; sid:1001002; rev:3;)
+alert udp any any -> $HOME_NET any (msg:"ELEC0138 high-rate UDP traffic"; detection_filter:track by_dst, count 50, seconds 1; sid:1001003; rev:2;)
+alert udp any any -> $HOME_NET 53 (msg:"ELEC0138 possible DNS flood"; detection_filter:track by_dst, count 25, seconds 1; sid:1001004; rev:2;)
+alert ip any any -> $HOME_NET any (msg:"ELEC0138 fragmented traffic burst"; fragbits:M; sid:1001005; rev:2;)
+alert tcp any any -> $HOME_NET 8080 (msg:"ELEC0138 repeated requests to thermostat service"; detection_filter:track by_dst, count 40, seconds 2; sid:1001006; rev:3;)
