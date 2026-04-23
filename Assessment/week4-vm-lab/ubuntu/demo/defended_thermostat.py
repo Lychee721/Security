@@ -21,6 +21,7 @@ class Config:
     bind_host = os.getenv("THERMOSTAT_BIND_HOST", "0.0.0.0")
     port = env_int("THERMOSTAT_PORT", 8080)
     api_key = os.getenv("THERMOSTAT_API_KEY", "elec0138-demo-key")
+    api_key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
     status_limit_count = env_int("THERMOSTAT_STATUS_LIMIT_COUNT", 20)
     status_limit_seconds = env_int("THERMOSTAT_STATUS_LIMIT_SECONDS", 2)
     command_limit_count = env_int("THERMOSTAT_COMMAND_LIMIT_COUNT", 5)
@@ -169,6 +170,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_retry_json(self, error, retry_after):
+        self._send_json(
+            {"ok": False, "error": error, "retry_after": retry_after},
+            code=429,
+            extra_headers={"Retry-After": str(retry_after)},
+        )
+
     def log_message(self, fmt, *args):
         print(f"[{now_ts()}] {self._client_ip()} {fmt % args}", flush=True)
 
@@ -176,11 +184,7 @@ class Handler(BaseHTTPRequestHandler):
         client_ip = self._client_ip()
         locked, retry_after = check_auth_lock(client_ip)
         if locked:
-            self._send_json(
-                {"ok": False, "error": "temporarily_locked", "retry_after": retry_after},
-                code=429,
-                extra_headers={"Retry-After": str(retry_after)},
-            )
+            self._send_retry_json("temporarily_locked", retry_after)
             return False
 
         provided_key = self.headers.get("X-API-Key", "")
@@ -205,11 +209,7 @@ class Handler(BaseHTTPRequestHandler):
             Config.status_limit_seconds,
         )
         if not allowed:
-            self._send_json(
-                {"ok": False, "error": "rate_limited", "retry_after": retry_after},
-                code=429,
-                extra_headers={"Retry-After": str(retry_after)},
-            )
+            self._send_retry_json("rate_limited", retry_after)
             return
 
         payload = {
@@ -232,11 +232,7 @@ class Handler(BaseHTTPRequestHandler):
             Config.command_limit_seconds,
         )
         if not allowed:
-            self._send_json(
-                {"ok": False, "error": "rate_limited", "retry_after": retry_after},
-                code=429,
-                extra_headers={"Retry-After": str(retry_after)},
-            )
+            self._send_retry_json("rate_limited", retry_after)
             return
 
         params = parse_qs(parsed.query)
@@ -277,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             "ok": True,
             "device": "defended-smart-thermostat",
             "security_profile": {
-                "api_key_fingerprint": hashlib.sha256(Config.api_key.encode("utf-8")).hexdigest()[:12],
+                "api_key_fingerprint": Config.api_key_fingerprint,
                 "status_rate_limit": {
                     "count": Config.status_limit_count,
                     "seconds": Config.status_limit_seconds,
@@ -330,7 +326,7 @@ def main():
     print("[*]   GET /status")
     print("[*]   GET /set_temp?value=23   with X-API-Key header")
     print("[*]   GET /admin/metrics       with X-API-Key header")
-    print("[*] API key fingerprint:", hashlib.sha256(Config.api_key.encode("utf-8")).hexdigest()[:12])
+    print("[*] API key fingerprint:", Config.api_key_fingerprint)
     server.serve_forever()
 
 

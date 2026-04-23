@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAB_DIR="$ROOT_DIR"
+source "$LAB_DIR/ubuntu/demo/common.sh"
 HOME_DIR="${HOME:-/home/elec0138}"
 WORK_DIR="$HOME_DIR/week4-lab"
 LOG_DIR="$WORK_DIR/logs"
@@ -20,14 +21,7 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt install -y snort curl python3 net-tools hping3
 
 echo "[*] Detecting a lab interface and IP"
-TARGET_IFACE="$(ip -o -4 addr show | awk '
-  $2 == "enp0s8" && $4 ~ /^169\.254\./ {print $2; exit}
-  $4 ~ /^192\.168\.56\./ {print $2; exit}
-  $4 ~ /^10\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^192\.168\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^169\.254\./ && $2 != "lo" {print $2; exit}
-')"
+TARGET_IFACE="$(detect_lab_interface 1)"
 
 if [[ -z "${TARGET_IFACE:-}" ]]; then
   echo "[!] Could not find a usable lab interface" | tee "$EVID_DIR/defense_demo_summary.txt"
@@ -36,11 +30,7 @@ if [[ -z "${TARGET_IFACE:-}" ]]; then
 fi
 
 TARGET_IP="$(ip -o -4 addr show "$TARGET_IFACE" | awk '{print $4}' | cut -d/ -f1)"
-if [[ "$TARGET_IP" =~ ^169\.254\. ]]; then
-  HOME_NET="169.254.0.0/16"
-else
-  HOME_NET="$(echo "$TARGET_IP" | awk -F. '{print $1 "." $2 "." $3 ".0/24"}')"
-fi
+HOME_NET="$(home_net_for_ip "$TARGET_IP" "link_local_16")"
 
 echo "[*] Interface: $TARGET_IFACE"
 echo "[*] Target IP: $TARGET_IP"
@@ -55,7 +45,7 @@ sudo sed -i "s#^ipvar HOME_NET .*#ipvar HOME_NET $HOME_NET#" /etc/snort/snort.co
 sudo grep '^ipvar HOME_NET' /etc/snort/snort.conf | tee "$EVID_DIR/defense_home_net.txt"
 
 echo "[*] Validating Snort"
-sudo snort -T -i "$TARGET_IFACE" -c /etc/snort/snort.conf |& tee "$EVID_DIR/defense_snort_test.txt"
+sudo snort -k none -T -i "$TARGET_IFACE" -c /etc/snort/snort.conf |& tee "$EVID_DIR/defense_snort_test.txt"
 
 echo "[*] Cleaning up older demo processes"
 sudo pkill snort 2>/dev/null || true
@@ -63,7 +53,7 @@ pkill -f defended_thermostat.py 2>/dev/null || true
 pkill -f mock_thermostat.py 2>/dev/null || true
 
 echo "[*] Starting Snort in the background"
-sudo sh -c "snort -A console -i '$TARGET_IFACE' -c /etc/snort/snort.conf > '$LOG_DIR/defense_snort_console.log' 2>&1 & echo \$! > '$LOG_DIR/defense_snort.pid'"
+sudo sh -c "snort -k none -A console -i '$TARGET_IFACE' -c /etc/snort/snort.conf > '$LOG_DIR/defense_snort_console.log' 2>&1 & echo \$! > '$LOG_DIR/defense_snort.pid'"
 sleep 5
 
 echo "[*] Starting defended thermostat service"
@@ -93,10 +83,7 @@ curl -fsS -H "X-API-Key: $API_KEY" "http://$TARGET_IP:8080/admin/metrics" | tee 
 echo "[*] Checking for Snort repeated-request alerts"
 grep -n "ELEC0138 repeated requests to thermostat service" "$LOG_DIR/defense_snort_console.log" > "$EVID_DIR/defense_http_alert_hits.txt" || true
 
-HTTP_HITS=0
-if [[ -s "$EVID_DIR/defense_http_alert_hits.txt" ]]; then
-  HTTP_HITS="$(wc -l < "$EVID_DIR/defense_http_alert_hits.txt")"
-fi
+HTTP_HITS="$(count_lines_if_nonempty "$EVID_DIR/defense_http_alert_hits.txt")"
 
 echo "[*] Making logs readable"
 sudo chmod -R a+r "$WORK_DIR"
@@ -111,15 +98,16 @@ logs_dir=$LOG_DIR
 evidence_dir=$EVID_DIR
 EOF
 
-cp -f "$EVID_DIR"/defense_demo_summary.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/defense_demo_summary.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/defense_status.json "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/defense_status.json "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/unauthorized_set_temp_body.json "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/unauthorized_set_temp_body.json "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/authorized_set_temp_body.json "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/authorized_set_temp_body.json "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/defended_status_burst_summary.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/defended_status_burst_summary.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/defended_metrics.json "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/defended_metrics.json "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/defense_http_alert_hits.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/defense_http_alert_hits.txt "$HOST_EVID_DIR"/
-cp -f "$LOG_DIR"/defense_snort_console.log "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$LOG_DIR"/defense_snort_console.log "$HOST_EVID_DIR"/
-cp -f "$LOG_DIR"/defended_thermostat.log "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$LOG_DIR"/defended_thermostat.log "$HOST_EVID_DIR"/
+copy_artifacts_to_host "$HOST_EVID_DIR" \
+  "$EVID_DIR/defense_demo_summary.txt" \
+  "$EVID_DIR/defense_status.json" \
+  "$EVID_DIR/unauthorized_set_temp_body.json" \
+  "$EVID_DIR/authorized_set_temp_body.json" \
+  "$EVID_DIR/defended_status_burst_summary.txt" \
+  "$EVID_DIR/defended_metrics.json" \
+  "$EVID_DIR/defense_http_alert_hits.txt" \
+  "$LOG_DIR/defense_snort_console.log" \
+  "$LOG_DIR/defended_thermostat.log"
 
 echo
 echo "[*] Multi-layer defense demo completed"

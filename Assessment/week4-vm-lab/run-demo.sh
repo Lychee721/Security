@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAB_DIR="$ROOT_DIR"
+source "$LAB_DIR/ubuntu/demo/common.sh"
 HOME_DIR="${HOME:-/home/elec0138}"
 WORK_DIR="$HOME_DIR/week4-lab"
 LOG_DIR="$WORK_DIR/logs"
@@ -19,14 +20,7 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt install -y snort hping3 curl python3 net-tools
 
 echo "[*] Detecting a private interface and IP"
-TARGET_IFACE="$(ip -o -4 addr show | awk '
-  $4 ~ /^192\.168\.56\./ {print $2; exit}
-  $2 == "enp0s8" && $4 ~ /^169\.254\./ {print $2; exit}
-  $4 ~ /^10\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^192\.168\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./ && $2 != "lo" {print $2; exit}
-  $4 ~ /^169\.254\./ && $2 != "lo" {print $2; exit}
-')"
+TARGET_IFACE="$(detect_lab_interface)"
 
 if [[ -z "${TARGET_IFACE:-}" ]]; then
   echo "[!] Could not find a usable private interface" | tee "$EVID_DIR/demo_summary.txt"
@@ -35,7 +29,7 @@ if [[ -z "${TARGET_IFACE:-}" ]]; then
 fi
 
 TARGET_IP="$(ip -o -4 addr show "$TARGET_IFACE" | awk '{print $4}' | cut -d/ -f1)"
-HOME_NET="$(echo "$TARGET_IP" | awk -F. '{print $1 "." $2 "." $3 ".0/24"}')"
+HOME_NET="$(home_net_for_ip "$TARGET_IP")"
 
 echo "[*] Interface: $TARGET_IFACE"
 echo "[*] Target IP: $TARGET_IP"
@@ -50,14 +44,14 @@ sudo sed -i "s#^ipvar HOME_NET .*#ipvar HOME_NET $HOME_NET#" /etc/snort/snort.co
 sudo grep '^ipvar HOME_NET' /etc/snort/snort.conf | tee "$EVID_DIR/home_net.txt"
 
 echo "[*] Validating Snort"
-sudo snort -T -i "$TARGET_IFACE" -c /etc/snort/snort.conf |& tee "$EVID_DIR/snort_test.txt"
+sudo snort -k none -T -i "$TARGET_IFACE" -c /etc/snort/snort.conf |& tee "$EVID_DIR/snort_test.txt"
 
 echo "[*] Cleaning up older demo processes"
 sudo pkill snort 2>/dev/null || true
 pkill -f mock_thermostat.py 2>/dev/null || true
 
 echo "[*] Starting Snort in the background"
-sudo sh -c "snort -A console -i '$TARGET_IFACE' -c /etc/snort/snort.conf > '$LOG_DIR/snort_console.log' 2>&1 & echo \$! > '$LOG_DIR/snort.pid'"
+sudo sh -c "snort -k none -A console -i '$TARGET_IFACE' -c /etc/snort/snort.conf > '$LOG_DIR/snort_console.log' 2>&1 & echo \$! > '$LOG_DIR/snort.pid'"
 sleep 5
 
 echo "[*] Starting mock thermostat service"
@@ -75,10 +69,7 @@ sleep 3
 echo "[*] Checking for Snort HTTP alert"
 grep -n "ELEC0138 repeated requests to thermostat service" "$LOG_DIR/snort_console.log" > "$EVID_DIR/http_alert_hits.txt" || true
 
-HTTP_HITS=0
-if [[ -s "$EVID_DIR/http_alert_hits.txt" ]]; then
-  HTTP_HITS="$(wc -l < "$EVID_DIR/http_alert_hits.txt")"
-fi
+HTTP_HITS="$(count_lines_if_nonempty "$EVID_DIR/http_alert_hits.txt")"
 
 ICMP_HITS=0
 if [[ "$HTTP_HITS" -eq 0 ]]; then
@@ -86,9 +77,7 @@ if [[ "$HTTP_HITS" -eq 0 ]]; then
   bash "$LAB_DIR/ubuntu/demo/icmp_burst_demo.sh" "$TARGET_IP" 3000 | tee "$LOG_DIR/icmp_burst.log" || true
   sleep 3
   grep -n "ELEC0138 ICMP burst to private host" "$LOG_DIR/snort_console.log" > "$EVID_DIR/icmp_alert_hits.txt" || true
-  if [[ -s "$EVID_DIR/icmp_alert_hits.txt" ]]; then
-    ICMP_HITS="$(wc -l < "$EVID_DIR/icmp_alert_hits.txt")"
-  fi
+  ICMP_HITS="$(count_lines_if_nonempty "$EVID_DIR/icmp_alert_hits.txt")"
 else
   : > "$EVID_DIR/icmp_alert_hits.txt"
 fi
@@ -106,13 +95,14 @@ logs_dir=$LOG_DIR
 evidence_dir=$EVID_DIR
 EOF
 
-cp -f "$EVID_DIR"/demo_summary.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/demo_summary.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/ip_addr.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/ip_addr.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/snort_test.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/snort_test.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/http_alert_hits.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/http_alert_hits.txt "$HOST_EVID_DIR"/
-cp -f "$EVID_DIR"/icmp_alert_hits.txt "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$EVID_DIR"/icmp_alert_hits.txt "$HOST_EVID_DIR"/
-cp -f "$LOG_DIR"/snort_console.log "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$LOG_DIR"/snort_console.log "$HOST_EVID_DIR"/
-cp -f "$LOG_DIR"/thermostat.log "$HOST_EVID_DIR"/ 2>/dev/null || sudo cp -f "$LOG_DIR"/thermostat.log "$HOST_EVID_DIR"/
+copy_artifacts_to_host "$HOST_EVID_DIR" \
+  "$EVID_DIR/demo_summary.txt" \
+  "$EVID_DIR/ip_addr.txt" \
+  "$EVID_DIR/snort_test.txt" \
+  "$EVID_DIR/http_alert_hits.txt" \
+  "$EVID_DIR/icmp_alert_hits.txt" \
+  "$LOG_DIR/snort_console.log" \
+  "$LOG_DIR/thermostat.log"
 
 echo
 echo "[*] Demo completed"
