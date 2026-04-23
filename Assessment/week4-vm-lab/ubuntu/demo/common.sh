@@ -85,3 +85,34 @@ copy_artifacts_to_host() {
     copy_with_sudo_fallback "$src" "$dest_dir"
   done
 }
+
+ensure_runtime_packages() {
+  local missing=()
+  local spec pkg cmd
+
+  for spec in "$@"; do
+    pkg="${spec%%:*}"
+    cmd="${spec#*:}"
+    if [[ "$cmd" == "$spec" ]]; then
+      cmd="$pkg"
+    fi
+
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$pkg")
+    fi
+  done
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    echo "[*] Required runtime packages already installed"
+    return
+  fi
+
+  echo "[*] Installing missing runtime packages: ${missing[*]}"
+  sudo apt update
+  sudo DEBIAN_FRONTEND=noninteractive apt install -y "${missing[@]}"
+}
+
+sha256_fingerprint() {
+  local value="$1"
+  printf '%s' "$value" | sha256sum | awk '{print substr($1, 1, 12)}'
+}

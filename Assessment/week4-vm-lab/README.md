@@ -18,11 +18,13 @@ Place these files in `~/week4-lab/pcaps/` inside the VM:
 
 ## Setup
 
-1. Run `ubuntu/setup_lab.sh`
-2. Find the interface with `ip addr`
-3. Run `ubuntu/snort/apply_local_rules.sh <interface>`
+1. Run `ubuntu/setup_lab.sh` once inside the Ubuntu VM.
+2. Copy the Week 4 PCAP files into `~/week4-lab/pcaps/`.
+3. Use `ip addr` to find the private or host-only interface if you want to run the individual helper scripts manually.
 
 ## Run
+
+The main demo entrypoints apply the coursework Snort rules automatically.
 
 `cw1`
 
@@ -38,7 +40,7 @@ Place these files in `~/week4-lab/pcaps/` inside the VM:
 
 - `ubuntu/demo/`: attack and defence scripts
 - `ubuntu/snort/`: local Snort rules
-- `evidence/`: sample outputs from the demo
+- `evidence/`: outputs generated locally after running the demo scripts
 
 ## Notes
 

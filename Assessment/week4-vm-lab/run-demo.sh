@@ -15,9 +15,7 @@ mkdir -p "$LOG_DIR" "$EVID_DIR" "$HOST_EVID_DIR"
 echo "[*] Refreshing sudo credentials"
 sudo -v
 
-echo "[*] Installing required packages"
-sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install -y snort hping3 curl python3 net-tools
+ensure_runtime_packages snort curl python3 hping3
 
 echo "[*] Detecting a private interface and IP"
 TARGET_IFACE="$(detect_lab_interface)"

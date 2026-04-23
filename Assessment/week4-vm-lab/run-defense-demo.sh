@@ -16,9 +16,7 @@ mkdir -p "$LOG_DIR" "$EVID_DIR" "$HOST_EVID_DIR"
 echo "[*] Refreshing sudo credentials"
 sudo -v
 
-echo "[*] Installing required packages"
-sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install -y snort curl python3 net-tools hping3
+ensure_runtime_packages snort curl python3
 
 echo "[*] Detecting a lab interface and IP"
 TARGET_IFACE="$(detect_lab_interface 1)"
@@ -84,6 +82,7 @@ echo "[*] Checking for Snort repeated-request alerts"
 grep -n "ELEC0138 repeated requests to thermostat service" "$LOG_DIR/defense_snort_console.log" > "$EVID_DIR/defense_http_alert_hits.txt" || true
 
 HTTP_HITS="$(count_lines_if_nonempty "$EVID_DIR/defense_http_alert_hits.txt")"
+API_KEY_FINGERPRINT="$(sha256_fingerprint "$API_KEY")"
 
 echo "[*] Making logs readable"
 sudo chmod -R a+r "$WORK_DIR"
@@ -92,7 +91,8 @@ cat > "$EVID_DIR/defense_demo_summary.txt" <<EOF
 interface=$TARGET_IFACE
 target_ip=$TARGET_IP
 home_net=$HOME_NET
-api_key=$API_KEY
+auth_mode=api_key
+api_key_fingerprint=$API_KEY_FINGERPRINT
 http_alert_hits=$HTTP_HITS
 logs_dir=$LOG_DIR
 evidence_dir=$EVID_DIR
